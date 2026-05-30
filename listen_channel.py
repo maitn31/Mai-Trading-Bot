@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 load_dotenv()
 
-api_id = os.getenv("API_ID")
+api_id = int(os.getenv("API_ID"))
 api_hash = os.getenv("API_HASH")
 
 channel_username = os.getenv("CHANNEL_USERNAME")
@@ -74,7 +74,6 @@ def save_signal_to_firebase(message_id, date, signal_data):
         "tp2": signal_data["tp2"],
         "sl": signal_data["sl"],
         "telegram_date": date.astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%d/%m/%Y %H:%M:%S"),
-        "processed": False
     }
 
     firebase_ref.child(channel_username).child(str(message_id)).set(firebase_data)

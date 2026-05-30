@@ -6,6 +6,7 @@ import os
 
 load_dotenv()
 
+CHANNEL_NAME = os.getenv("CHANNEL_USERNAME")
 DATABASE_URL = os.getenv("DATABASE_URL")
 FIREBASE_KEY_FILE = "firebase-key.json"
 
@@ -20,6 +21,13 @@ initial_load_done = False
 
 
 def initialize_firebase():
+    if not DATABASE_URL:
+        print("DATABASE_URL is missing in .env")
+        return False
+    if not CHANNEL_NAME:
+        print("CHANNEL_NAME is missing in .env")
+        return False
+
     cred = credentials.Certificate(FIREBASE_KEY_FILE)
 
     if not firebase_admin._apps:
@@ -28,6 +36,8 @@ def initialize_firebase():
         })
 
     print("Firebase connected")
+
+    return True
 
 
 def initialize_mt5():
@@ -139,6 +149,7 @@ def handle_signal(signal_id, signal_data):
     seen_ids.add(signal_id)
 
     print("New signal received:")
+    print("Channel:", CHANNEL_NAME)
     print("Signal ID:", signal_id)
     print(signal_data)
 
@@ -148,21 +159,24 @@ def handle_signal(signal_id, signal_data):
 def firebase_listener(event):
     global initial_load_done
 
-    if event.data is None:
-        return
+    print("Firebase event path:", event.path)
 
     if event.path == "/":
         print("Initial Firebase data loaded. Ignoring old signals.")
 
         if isinstance(event.data, dict):
             for signal_id in event.data.keys():
-                seen_ids.add(signal_id)
+                seen_ids.add(str(signal_id))
 
         initial_load_done = True
         print("Ready. New signals after this point will be traded.")
         return
 
     if not initial_load_done:
+        print("Ignored event because initial load is not done yet.")
+        return
+
+    if event.data is None:
         return
 
     signal_id = event.path.strip("/")
@@ -177,14 +191,17 @@ def firebase_listener(event):
 
 
 def main():
-    initialize_firebase()
+
+
+    if not initialize_firebase():
+        return
 
     if not initialize_mt5():
         return
 
-    signals_ref = db.reference("signals")
+    signals_ref = db.reference(f"signals/{CHANNEL_NAME}")
 
-    print("Listening to Firebase signals...")
+    print("Listening to Firebase signals")
     signals_ref.listen(firebase_listener)
 
 
