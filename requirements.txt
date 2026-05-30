@@ -1,0 +1,4 @@
+metatrader5~=5.0.5735
+firebase_admin~=7.4.0
+python-dotenv~=1.2.2
+Telethon~=1.43.2
