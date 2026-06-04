@@ -3,5 +3,5 @@
 *.session
 *.txt
 *.json
-
+*.session-journal
 !/requirements.txt

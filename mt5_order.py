@@ -3,6 +3,8 @@ import firebase_admin
 from firebase_admin import credentials, db
 from dotenv import load_dotenv
 import os
+import time
+import threading
 
 load_dotenv()
 
@@ -135,10 +137,10 @@ def place_order(signal_id, signal_data):
 
     if result.retcode != mt5.TRADE_RETCODE_DONE:
         print("Order failed:", result.retcode, result.comment)
-        return False
+        return None
 
     print("Order placed successfully")
-    return True
+    return result.order
 
 
 def handle_signal(signal_id, signal_data):
@@ -153,7 +155,20 @@ def handle_signal(signal_id, signal_data):
     print("Signal ID:", signal_id)
     print(signal_data)
 
-    place_order(signal_id, signal_data)
+    order_ticket = place_order(signal_id, signal_data)
+
+    if order_ticket:
+        symbol = get_mt5_symbol(signal_data["pair"])
+        signal_type = signal_data["type"]
+        tp1 = float(signal_data["tp1"])
+
+        monitor_thread = threading.Thread(
+            target=monitor_cancel_if_tp1_hit,
+            args=(symbol, order_ticket, signal_type, tp1),
+            daemon=True
+        )
+
+        monitor_thread.start()
 
 
 def firebase_listener(event):
@@ -188,6 +203,64 @@ def firebase_listener(event):
         return
 
     handle_signal(signal_id, event.data)
+
+def cancel_order(order_ticket):
+    request = {
+        "action": mt5.TRADE_ACTION_REMOVE,
+        "order": order_ticket,
+    }
+
+    result = mt5.order_send(request)
+
+    print("Cancel order result:")
+    print(result)
+
+    if result is None:
+        print("Cancel failed:", mt5.last_error())
+        return False
+
+    if result.retcode != mt5.TRADE_RETCODE_DONE:
+        print("Cancel failed:", result.retcode, result.comment)
+        return False
+
+    print("Pending order cancelled:", order_ticket)
+    return True
+
+
+def monitor_cancel_if_tp1_hit(symbol, order_ticket, signal_type, tp1):
+    print("Started TP1 cancel monitor for order:", order_ticket)
+
+    signal_type = signal_type.upper()
+
+    while True:
+        time.sleep(0.5)
+
+        orders = mt5.orders_get(ticket=order_ticket)
+
+        if not orders:
+            print("Order is no longer pending. Stop monitor:", order_ticket)
+            return
+
+        tick = mt5.symbol_info_tick(symbol)
+
+        if tick is None:
+            continue
+
+        if signal_type == "BUY":
+            current_price = tick.ask
+
+            if current_price >= tp1:
+                print("BUY pending not filled, but TP1 was reached. Cancelling order.")
+                cancel_order(order_ticket)
+                return
+
+        if signal_type == "SELL":
+            current_price = tick.bid
+
+            if current_price <= tp1:
+                print("SELL pending not filled, but TP1 was reached. Cancelling order.")
+                cancel_order(order_ticket)
+                return
 
 
 def main():
